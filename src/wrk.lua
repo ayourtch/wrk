@@ -20,6 +20,7 @@ function wrk.resolve(host, service)
 end
 
 function wrk.setup(thread)
+   print ("setup", thread)
    thread.addr = wrk.addrs[1]
    if type(setup) == "function" then
       setup(thread)
@@ -27,6 +28,7 @@ function wrk.setup(thread)
 end
 
 function wrk.init(args)
+   print "init"
    if not wrk.headers["Host"] then
       local host = wrk.host
       local port = wrk.port
@@ -43,6 +45,7 @@ function wrk.init(args)
 
    local req = wrk.format()
    wrk.request = function()
+      print "request"
       return req
    end
 end

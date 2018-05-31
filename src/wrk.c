@@ -218,6 +218,10 @@ void *thread_main(void *arg) {
         c->request = request;
         c->length  = length;
         c->delayed = cfg.delay;
+        c->addr    = zrealloc(c->addr, sizeof(*c->addr));
+        c->fd      = -1;
+        script_addr_copy(thread->addr, c->addr);
+        script_connection_init(thread, c, i);
         connect_socket(thread, c);
     }
 
@@ -234,7 +238,7 @@ void *thread_main(void *arg) {
 }
 
 static int connect_socket(thread *thread, connection *c) {
-    struct addrinfo *addr = thread->addr;
+    struct addrinfo *addr = c->addr;
     struct aeEventLoop *loop = thread->loop;
     int fd, flags;
 

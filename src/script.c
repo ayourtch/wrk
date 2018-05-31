@@ -22,6 +22,9 @@ static int script_thread_newindex(lua_State *);
 static int script_wrk_lookup(lua_State *);
 static int script_wrk_connect(lua_State *);
 
+static int script_connection_index(lua_State *);
+static int script_connection_newindex(lua_State *);
+
 static void set_fields(lua_State *, int, const table_field *);
 static void set_field(lua_State *, int, char *, int);
 static int push_url_part(lua_State *, char *, struct http_parser_url *, enum http_parser_url_fields);
@@ -45,6 +48,12 @@ static const struct luaL_Reg threadlib[] = {
     { NULL,         NULL                   }
 };
 
+static const struct luaL_Reg connectionlib[] = {
+    { "__index",    script_connection_index    },
+    { "__newindex", script_connection_newindex },
+    { NULL,         NULL                   }
+};
+
 lua_State *script_create(char *file, char *url, char **headers) {
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
@@ -54,6 +63,7 @@ lua_State *script_create(char *file, char *url, char **headers) {
     luaL_register(L, NULL, addrlib);
     luaL_newmetatable(L, "wrk.stats");
     luaL_register(L, NULL, statslib);
+
     luaL_newmetatable(L, "wrk.thread");
     luaL_register(L, NULL, threadlib);
 
@@ -118,6 +128,31 @@ void script_push_thread(lua_State *L, thread *t) {
     luaL_getmetatable(L, "wrk.thread");
     lua_setmetatable(L, -2);
 }
+
+void script_push_connection(lua_State *L, connection *c) {
+    connection **ptr = (connection **) lua_newuserdata(L, sizeof(connection **));
+    *ptr = c;
+    luaL_getmetatable(L, "wrk.connection");
+    lua_setmetatable(L, -2);
+}
+
+void script_connection_init(thread *t, connection *c, int connection_index) {
+    // printf("connection_init\n");
+    luaL_newmetatable(t->L, "wrk.connection");
+    luaL_register(t->L, NULL, connectionlib);
+
+    lua_getglobal(t->L, "connection_init");
+    if (lua_isfunction(t->L, -1)) {
+      script_push_thread(t->L, t);
+      script_push_connection(t->L, c);
+      lua_pushinteger(t->L, connection_index);
+      lua_call(t->L, 3, 0);
+    } else {
+      // printf("connection_init undefined\n");
+    }
+    lua_pop(t->L, 1);
+}
+
 
 void script_init(lua_State *L, thread *t, int argc, char **argv) {
     lua_getglobal(t->L, "wrk");
@@ -389,6 +424,12 @@ static thread *checkthread(lua_State *L) {
     return *t;
 }
 
+static connection *checkconnection(lua_State *L) {
+    connection **c = luaL_checkudata(L, 1, "wrk.connection");
+    luaL_argcheck(L, c != NULL, 1, "`connection' expected");
+    return *c;
+}
+
 static int script_thread_get(lua_State *L) {
     thread *t = checkthread(L);
     const char *key = lua_tostring(L, -1);
@@ -400,6 +441,25 @@ static int script_thread_get(lua_State *L) {
 
 static int script_thread_set(lua_State *L) {
     thread *t = checkthread(L);
+    const char *name = lua_tostring(L, -2);
+    script_copy_value(L, t->L, -1);
+    lua_setglobal(t->L, name);
+    return 0;
+}
+
+static int script_connection_get(lua_State *L) {
+    connection *c = checkconnection(L);
+    thread *t = c->thread;
+    const char *key = lua_tostring(L, -1);
+    lua_getglobal(t->L, key);
+    script_copy_value(t->L, L, -1);
+    lua_pop(t->L, 1);
+    return 1;
+}
+
+static int script_connection_set(lua_State *L) {
+    connection *c = checkconnection(L);
+    thread *t = c->thread;
     const char *name = lua_tostring(L, -2);
     script_copy_value(L, t->L, -1);
     lua_setglobal(t->L, name);
@@ -422,6 +482,16 @@ static int script_thread_index(lua_State *L) {
     return 1;
 }
 
+static int script_connection_index(lua_State *L) {
+    connection *c = checkconnection(L);
+    const char *key = lua_tostring(L, 2);
+    if (!strcmp("get",  key)) lua_pushcfunction(L, script_connection_get);
+    if (!strcmp("set",  key)) lua_pushcfunction(L, script_connection_set);
+    if (!strcmp("addr", key)) script_addr_clone(L, c->addr);
+    return 1;
+}
+
+
 static int script_thread_newindex(lua_State *L) {
     thread *t = checkthread(L);
     const char *key = lua_tostring(L, -2);
@@ -432,6 +502,20 @@ static int script_thread_newindex(lua_State *L) {
         script_addr_copy(addr, t->addr);
     } else {
         luaL_error(L, "cannot set '%s' on thread", luaL_typename(L, -1));
+    }
+    return 0;
+}
+
+static int script_connection_newindex(lua_State *L) {
+    connection *c = checkconnection(L);
+    const char *key = lua_tostring(L, -2);
+    if (!strcmp("addr", key)) {
+        struct addrinfo *addr = checkaddr(L);
+        if (c->addr) zfree(c->addr->ai_addr);
+        c->addr = zrealloc(c->addr, sizeof(*addr));
+        script_addr_copy(addr, c->addr);
+    } else {
+        luaL_error(L, "cannot set '%s' on connection", luaL_typename(L, -1));
     }
     return 0;
 }

@@ -60,6 +60,7 @@ typedef struct connection {
     uint64_t pending;
     buffer headers;
     buffer body;
+    struct addrinfo *addr;
     char buf[RECVBUF];
 } connection;
 

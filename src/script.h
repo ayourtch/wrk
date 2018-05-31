@@ -11,6 +11,8 @@
 
 lua_State *script_create(char *, char *, char **);
 
+void script_addr_copy(struct addrinfo *src, struct addrinfo *dst);
+
 bool script_resolve(lua_State *, char *, char *);
 void script_setup(lua_State *, thread *);
 void script_done(lua_State *, stats *, stats *);
@@ -20,6 +22,9 @@ uint64_t script_delay(lua_State *);
 void script_request(lua_State *, char **, size_t *);
 void script_response(lua_State *, int, buffer *, buffer *);
 size_t script_verify_request(lua_State *L);
+
+void script_connection_init(thread *t, connection *c, int connection_index);
+
 
 bool script_is_static(lua_State *);
 bool script_want_response(lua_State *L);
